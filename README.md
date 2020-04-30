@@ -2,9 +2,9 @@
 
 Siga os passos abaixo para inicializar este ambiente de testes.
 
-**Passo 01:** Crie uma network chamada ```public_network```.
+**Passo 01:** Crie uma network chamada ```traefik-network```.
 ```bash
-docker network create public_network
+docker network create --driver bridge traefik-network
 ```
 
 **Passo 02:** Adicione no ```/etc/hosts``` do seu notebook/desktop as entradas de DNS abaixo.

@@ -2,58 +2,62 @@ version: '3.7'
 
 services:
   traefik:
-    image: traefik:v2.2
+    image: traefik:v2.2.1
     container_name: traefik
+    restart: unless-stopped
     ports:
       - target: 80
         published: 80
         protocol: tcp
         mode: host
     volumes:
-    - /etc/localtime:/etc/localtime:ro
-    - /var/run/docker.sock:/var/run/docker.sock:ro
+      - type: bind
+        source: /etc/localtime
+        target: /etc/localtime
+        read_only: true
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        read_only: true
     networks:
-    - public_network
+      - traefik-network
     command:
-    - --api=true
-    - --api.dashboard=true
-    - --providers.docker.exposedByDefault=false
-    - --providers.docker.swarmMode=false
-    - --providers.docker.network=public_network
-    - --entryPoints.http.address=:80
-    - --log.level=INFO
-    - --accesslog=true
-    - --ping=true
-    - --metrics
-    - --metrics.prometheus
-    - --metrics.prometheus.buckets=0.100000, 0.300000, 1.200000, 5.000000
-    - --metrics.prometheus.addEntryPointsLabels=true
-    - --metrics.prometheus.addServicesLabels=true
-    - --metrics.prometheus.entryPoint=metrics
-    - --entryPoints.metrics.address=:8082
+      - --api=true
+      - --api.dashboard=true
+      - --providers.docker.exposedByDefault=false
+      - --providers.docker.swarmMode=false
+      - --providers.docker.network=traefik-network
+      - --entryPoints.http.address=:80
+      - --log.level=INFO
+      - --accesslog=true
+      - --ping=true
+      - --metrics
+      - --metrics.prometheus
+      - --metrics.prometheus.buckets=0.100000, 0.300000, 1.200000, 5.000000
+      - --metrics.prometheus.addEntryPointsLabels=true
+      - --metrics.prometheus.addServicesLabels=true
+      - --metrics.prometheus.entryPoint=metrics
+      - --entryPoints.metrics.address=:8082
     labels:
-    # --- User: admin
-    # --- Password: password
-    - traefik.enable=true
-    - traefik.docker.network=public_network
-    # --- Enable dashboard access: http://traefik.meudominio.local/ protected by password
-    - traefik.http.routers.dashboard.entryPoints=http
-    - traefik.http.routers.dashboard.rule=Host(`traefik.meudominio.local`)
-    - traefik.http.routers.dashboard.service=api@internal
-    - traefik.http.routers.dashboard.middlewares=traefik-auth
-    - traefik.http.middlewares.traefik-auth.basicauth.users=admin:$$apr1$$0ON0eMjB$$5F1vytsJjC1MJe0mu12o71
-    # --- Enable Prometheus Metrics: http://traefik.meudominio.local/metrics
-    - traefik.http.routers.metrics.entryPoints=http
-    - traefik.http.routers.metrics.rule=Host(`traefik.meudominio.local`) && PathPrefix(`/metrics`)
-    - traefik.http.routers.metrics.service=prometheus@internal
+      # --- User: admin
+      # --- Password: password
+      - traefik.enable=true
+      - traefik.docker.network=traefik-network
+      # --- Enable dashboard access: http://traefik.meudominio.local/ protected by password
+      - traefik.http.routers.dashboard.entryPoints=http
+      - traefik.http.routers.dashboard.rule=Host(`traefik.meudominio.local`)
+      - traefik.http.routers.dashboard.service=api@internal
+      - traefik.http.routers.dashboard.middlewares=traefik-auth
+      - traefik.http.middlewares.traefik-auth.basicauth.users=admin:$$apr1$$0ON0eMjB$$5F1vytsJjC1MJe0mu12o71
+      # --- Enable Prometheus Metrics: http://traefik.meudominio.local/metrics
+      - traefik.http.routers.metrics.entryPoints=http
+      - traefik.http.routers.metrics.rule=Host(`traefik.meudominio.local`) && PathPrefix(`/metrics`)
+      - traefik.http.routers.metrics.service=prometheus@internal
 
   rocketchat:
-    image: store/rocketchat/rocket.chat:2.2.0
+    image: rocketchat/rocket.chat:3.1.1
     container_name: rocketchat
-    command: >
-      bash -c 'for i in `seq 1 30`; do node main.js &&      
-      s=$$? && break || s=$$?; echo "Tried $$i times. Waiting 5 secs...";
-      sleep 5; done; (exit $$s)'
+    command: bash -c "for i in `seq 1 30`; do node main.js && s=$$? && break || s=$$?; echo \"Tried $$i times. Waiting 5 secs...\"; sleep 5; done; (exit $$s)"
     environment:
       PORT: '3000'
       ROOT_URL: 'http://chat.meudominio.local'
@@ -61,45 +65,50 @@ services:
       MONGO_OPLOG_URL: 'mongodb://mongo:27017/local'
       Accounts_UseDNSDomainCheck: 'True'
     depends_on:
-    - mongo
+      - mongo
     networks:
-    - public_network
-    - private_network
+      - traefik-network
+      - rocketchat-network
     volumes:
-    - rocketchat_data:/app/uploads
+      - type: volume
+        source: rocketchat_upload_data
+        target: /app/uploads
     labels:
-    - traefik.enable=true
-    - traefik.docker.network=public_network
-    - traefik.http.routers.chat.entryPoints=http
-    - traefik.http.routers.chat.rule=Host(`chat.meudominio.local`)
-    - traefik.http.services.chat.loadbalancer.server.port=3000
+      - traefik.enable=true
+      - traefik.docker.network=traefik-network
+      - traefik.http.routers.chat.entryPoints=http
+      - traefik.http.routers.chat.rule=Host(`chat.meudominio.local`)
+      - traefik.http.services.chat.loadbalancer.server.port=3000
 
   mongo:
-    image: mongo:4.2.3-bionic
+    image: mongo:4.2.6
     container_name: mongo
+    restart: unless-stopped
     command: mongod --oplogSize 128 --replSet rs0
     networks:
-    - private_network
+    - rocketchat-network
     volumes:
-    - mongo_data:/data/db
+      - type: volume
+        source: mongo_data
+        target: /data/db
 
   mongo-init-replica:
-    image: mongo:4.2.3-bionic
+    image: mongo:4.2.6
     container_name: mongo-init-replica
-    command: 'mongo mongo/rocketchat --eval "rs.initiate({ _id: ''rs0'', members: [ { _id: 0, host: ''mongo:27017'' } ]})"'
+    command: 'mongo mongo/rocketchat --eval "rs.initiate({ _id: ''rs0'', members: [ { _id: 0, host: ''localhost:27017'' } ]})"'
     depends_on:
-    - mongo
+      - mongo
     networks:
-    - private_network
+      - rocketchat-network
 
 networks:
-  public_network:
+  traefik-network:
     external: true
-  private_network:
+  rocketchat-network:
     driver: bridge
 
 volumes:
-  rocketchat_data:
+  rocketchat_upload_data:
     driver: local
   mongo_data:
     driver: local
