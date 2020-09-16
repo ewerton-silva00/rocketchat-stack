@@ -2,7 +2,7 @@ version: '3.7'
 
 services:
   traefik:
-    image: traefik:v2.2.1
+    image: traefik:v2.3
     container_name: traefik
     restart: unless-stopped
     ports:
@@ -55,7 +55,7 @@ services:
       - traefik.http.routers.metrics.service=prometheus@internal
 
   rocketchat:
-    image: rocketchat/rocket.chat:3.1.1
+    image: rocket.chat:3.6.1
     container_name: rocketchat
     command: bash -c "for i in `seq 1 30`; do node main.js && s=$$? && break || s=$$?; echo \"Tried $$i times. Waiting 5 secs...\"; sleep 5; done; (exit $$s)"
     environment:
@@ -65,20 +65,21 @@ services:
       MONGO_OPLOG_URL: 'mongodb://mongo:27017/local'
       Accounts_UseDNSDomainCheck: 'True'
     depends_on:
+      - traefik
       - mongo
+      - minio
     networks:
       - traefik-network
       - rocketchat-network
-    volumes:
-      - type: volume
-        source: rocketchat_upload_data
-        target: /app/uploads
     labels:
       - traefik.enable=true
       - traefik.docker.network=traefik-network
       - traefik.http.routers.chat.entryPoints=http
       - traefik.http.routers.chat.rule=Host(`chat.meudominio.local`)
       - traefik.http.services.chat.loadbalancer.server.port=3000
+    #  - traefik.http.services.chat.loadbalancer.healthcheck.interval=5s
+    #  - traefik.http.services.chat.loadbalancer.healthcheck.timeout=3s
+    #  - traefik.http.services.chat.loadbalancer.healthcheck.path=/api/info
 
   mongo:
     image: mongo:4.2.6
@@ -86,11 +87,12 @@ services:
     restart: unless-stopped
     command: mongod --oplogSize 128 --replSet rs0
     networks:
-    - rocketchat-network
+      - rocketchat-network
     volumes:
       - type: volume
         source: mongo_data
         target: /data/db
+        read_only: false
 
   mongo-init-replica:
     image: mongo:4.2.6
@@ -100,15 +102,45 @@ services:
       - mongo
     networks:
       - rocketchat-network
+  
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    command: server /data
+    environment:
+      MINIO_ACCESS_KEY: 'iGX56As7gXHvi2GivLnD'
+      MINIO_SECRET_KEY: 'TU7PQwaxdixB4CKMrsAuuFEAioqwaeXO38FkzxWo'
+      MINIO_REGION_NAME: 'local'
+      MINIO_BROWSER: 'on'
+      MINIO_PROMETHEUS_AUTH_TYPE: 'public'
+    volumes:
+      - type: volume
+        source: minio_data
+        target: /data
+        read_only: false
+    depends_on:
+      - traefik
+    networks:
+      - traefik-network
+      - rocketchat-network
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-network
+      - traefik.http.routers.minio.entryPoints=http
+      - traefik.http.routers.minio.rule=Host(`minio.meudominio.local`)
+      - traefik.http.services.minio.loadbalancer.server.port=9000
+    #  - traefik.http.services.minio.loadbalancer.healthcheck.interval=5s
+    #  - traefik.http.services.minio.loadbalancer.healthcheck.timeout=3s
+    #  - traefik.http.services.minio.loadbalancer.healthcheck.path=/minio/health/live
 
 networks:
   traefik-network:
-    external: true
+    driver: bridge
   rocketchat-network:
     driver: bridge
 
 volumes:
-  rocketchat_upload_data:
-    driver: local
   mongo_data:
+    driver: local
+  minio_data:
     driver: local
