@@ -28,7 +28,7 @@ Password: password
 
 Documentações utilizadas para executar esse ambiente:
 
-https://docs.traefik.io/
-https://docs.min.io/
-https://rocket.chat/docs/installation/docker-containers/docker-compose/
+https://docs.traefik.io/  
+https://docs.min.io/  
+https://rocket.chat/docs/installation/docker-containers/docker-compose/  
 https://rocket.chat/docs/administrator-guides/setting-up-video-conferencing/
