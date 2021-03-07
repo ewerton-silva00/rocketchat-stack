@@ -1,8 +1,8 @@
-version: '3.7'
+version: '3.8'
 
 services:
   traefik:
-    image: traefik:v2.3
+    image: traefik:v2.4.6
     container_name: traefik
     restart: unless-stopped
     ports:
@@ -20,15 +20,15 @@ services:
         target: /var/run/docker.sock
         read_only: true
     networks:
-      - traefik-network
+      - public-network
     command:
       - --api=true
       - --api.dashboard=true
       - --providers.docker.exposedByDefault=false
       - --providers.docker.swarmMode=false
-      - --providers.docker.network=traefik-network
-      - --entryPoints.http.address=:80
-      - --log.level=INFO
+      - --providers.docker.network=public-network
+      - --entryPoints.web.address=:80
+      - --log.level=ERROR
       - --accesslog=true
       - --ping=true
       - --metrics
@@ -42,20 +42,20 @@ services:
       # --- User: admin
       # --- Password: password
       - traefik.enable=true
-      - traefik.docker.network=traefik-network
+      - traefik.docker.network=public-network
       # --- Enable dashboard access: http://traefik.meudominio.local/ protected by password
-      - traefik.http.routers.dashboard.entryPoints=http
+      - traefik.http.routers.dashboard.entryPoints=web
       - traefik.http.routers.dashboard.rule=Host(`traefik.meudominio.local`)
       - traefik.http.routers.dashboard.service=api@internal
       - traefik.http.routers.dashboard.middlewares=traefik-auth
       - traefik.http.middlewares.traefik-auth.basicauth.users=admin:$$apr1$$0ON0eMjB$$5F1vytsJjC1MJe0mu12o71
       # --- Enable Prometheus Metrics: http://traefik.meudominio.local/metrics
-      - traefik.http.routers.metrics.entryPoints=http
+      - traefik.http.routers.metrics.entryPoints=web
       - traefik.http.routers.metrics.rule=Host(`traefik.meudominio.local`) && PathPrefix(`/metrics`)
       - traefik.http.routers.metrics.service=prometheus@internal
 
   rocketchat:
-    image: rocket.chat:3.6.1
+    image: rocket.chat:3.12.0
     container_name: rocketchat
     command: bash -c "for i in `seq 1 30`; do node main.js && s=$$? && break || s=$$?; echo \"Tried $$i times. Waiting 5 secs...\"; sleep 5; done; (exit $$s)"
     environment:
@@ -69,42 +69,40 @@ services:
       - mongo
       - minio
     networks:
-      - traefik-network
-      - rocketchat-network
+      - public-network
+      - private-network
     labels:
       - traefik.enable=true
-      - traefik.docker.network=traefik-network
-      - traefik.http.routers.chat.entryPoints=http
+      - traefik.docker.network=public-network
+      # --- Acesso HTTP
+      - traefik.http.routers.chat.entryPoints=web
       - traefik.http.routers.chat.rule=Host(`chat.meudominio.local`)
       - traefik.http.services.chat.loadbalancer.server.port=3000
-    #  - traefik.http.services.chat.loadbalancer.healthcheck.interval=5s
-    #  - traefik.http.services.chat.loadbalancer.healthcheck.timeout=3s
-    #  - traefik.http.services.chat.loadbalancer.healthcheck.path=/api/info
 
   mongo:
-    image: mongo:4.2.6
+    image: mongo:4.4.4
     container_name: mongo
     restart: unless-stopped
     command: mongod --oplogSize 128 --replSet rs0
-    networks:
-      - rocketchat-network
     volumes:
       - type: volume
-        source: mongo_data
+        source: mongodb-volume
         target: /data/db
         read_only: false
+    networks:
+      - private-network
 
   mongo-init-replica:
-    image: mongo:4.2.6
+    image: mongo:4.4.4
     container_name: mongo-init-replica
     command: 'mongo mongo/rocketchat --eval "rs.initiate({ _id: ''rs0'', members: [ { _id: 0, host: ''localhost:27017'' } ]})"'
     depends_on:
       - mongo
     networks:
-      - rocketchat-network
+      - private-network
   
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2021-03-04T00-53-13Z
     container_name: minio
     command: server /data
     environment:
@@ -115,32 +113,30 @@ services:
       MINIO_PROMETHEUS_AUTH_TYPE: 'public'
     volumes:
       - type: volume
-        source: minio_data
+        source: minio-volume
         target: /data
         read_only: false
     depends_on:
       - traefik
     networks:
-      - traefik-network
-      - rocketchat-network
+      - public-network
+      - private-network
     labels:
       - traefik.enable=true
-      - traefik.docker.network=traefik-network
-      - traefik.http.routers.minio.entryPoints=http
+      - traefik.docker.network=public-network
+      # --- Acesso HTTP
+      - traefik.http.routers.minio.entryPoints=web
       - traefik.http.routers.minio.rule=Host(`minio.meudominio.local`)
       - traefik.http.services.minio.loadbalancer.server.port=9000
-    #  - traefik.http.services.minio.loadbalancer.healthcheck.interval=5s
-    #  - traefik.http.services.minio.loadbalancer.healthcheck.timeout=3s
-    #  - traefik.http.services.minio.loadbalancer.healthcheck.path=/minio/health/live
 
 networks:
-  traefik-network:
+  public-network:
     driver: bridge
-  rocketchat-network:
+  private-network:
     driver: bridge
 
 volumes:
-  mongo_data:
+  mongodb-volume:
     driver: local
-  minio_data:
+  minio-volume:
     driver: local

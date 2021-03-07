@@ -15,18 +15,18 @@ docker-compose up --detach
 
 **Passo 03:** Acesse os serviços no browser.
 ```
-traefik.meudominio.local
-minio.meudominio.local
-chat.meudominio.local
+http://traefik.meudominio.local/
+http://minio.meudominio.local/
+http://chat.meudominio.local/
 ```
 
-**Observação:** O **Dashboard** do Traefik está protegida por usuário e senha.
+**Observação:** O **Dashboard** do Traefik está protegido por usuário e senha.
 ```
 User: admin
 Password: password
 ```
 
-Documentações utilizadas para executar esse ambiente:
+Documentações utilizadas para configurar este ambiente:
 
 https://docs.traefik.io/  
 https://docs.min.io/  
